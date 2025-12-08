@@ -24,6 +24,7 @@ TASK3 Xiaoyi
 - Create a list of queries that we can use as examples
 
 Xiaoyi Comments 12.8:
+
 I added 4 method: generate_query, write_queries_fasta, write_kmer_index_fasta, sw_gapped
 Basically, for the first 2 methods, they can generate customized query and output them in a .fa fiile correspondingly.
 The third one use Yilin's method build_kmer_index, which I found is already very well-written: build_kmer_index can already genrate a dict of indexed k-mer words
