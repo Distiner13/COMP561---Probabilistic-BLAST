@@ -263,43 +263,224 @@ def ungapped_extension(
     return hsp
 
 
-def main():
-    fasta_path = 'F:\VS code file\Final_project\chr22_ancestor.fa'
-    sequence = read_fasta_sequence(fasta_path)
 
-    conf_path = "F:\VS code file\Final_project\chr22_ancestor.conf"
+
+def generate_query(
+    major_base: str,
+    p_max: List[float],
+    length: int,
+    start: Optional[int] = None,
+    mut_rate: float = 0.0,
+) -> Tuple[str, int]:
+    """
+    generate a query from probabilistic genome.
+    major_base: ancestor seq
+    p_max: read_confidences
+    length: query length
+    start: query start index
+    mut_rate: mutation rate
+    ---return 
+    (query, start)
+    """
+    L = len(major_base) 
+    if length <= 0:
+        raise ValueError("length has to be positive")
+
+    if start is None:
+        max_start = L - length
+        if max_start < 0:
+            raise ValueError()
+        start = random.randrange(0, max_start + 1)
+    else:
+        if start < 0 or start + length > L:
+            raise ValueError()
+
+    bases = "ACGT"
+    base_to_idx = {b: i for i, b in enumerate(bases)}
+    query_chars = []
+
+    # generate the query according to conf prob
+    for offset in range(length):
+        pos = start + offset
+        maj = major_base[pos]
+        c = p_max[pos]  # maj prob
+
+        # A/C/G/T probs at the pos
+        probs = [(1.0 - c)/3.0]*4
+        probs[base_to_idx[maj]] = c
+
+        base = random.choices(bases, weights=probs, k=1)[0]
+        query_chars.append(base)
+
+    # maybe we want mutations
+    if mut_rate > 0.0:
+        for i in range(length):
+            if random.random() < mut_rate:
+                current = query_chars[i]
+                alternatives = [b for b in bases if b != current]
+                query_chars[i] = random.choice(alternatives)
+
+    query = "".join(query_chars)
+    return query, start
+
+import random
+from typing import List
+
+
+
+def write_queries_fasta(
+    out_path: str,
+    major_base: str,
+    p_max: List[float],
+    num_queries: int,
+    length: int,
+    mut_rate: float = 0.0,
+    line_width: int = 80, # upper limits of length of a row in fasta
+) -> None:
+    """
+    generate a fa file with customized number of queries 
+    """
+
+    with open(out_path, "w") as fout:
+        for i in range(num_queries):
+            query, start = generate_query(
+                major_base=major_base,
+                p_max=p_max,
+                length=length,
+                start=None,
+                mut_rate=mut_rate,
+            )
+            db_start = start
+            db_end = start + len(query)-1
+
+            header = f">query{i+1}|db_start={db_start}|db_end={db_end}\n"
+            fout.write(header)
+            for j in range(0, len(query), line_width):
+                fout.write(query[j:j+line_width] + "\n")
+
+
+def write_kmer_index_fasta(
+    major_base: str,
+    k: int,
+    out_path: str,
+    line_width: int = 80,
+) -> None:
+    """
+    use build_kmer_index to build k-mer indexed database.
+    output in .fa
+
+    i.e.:
+        >ACGT|count=12
+        10 283 2949 ...
+    """
+
+    index = build_kmer_index(major_base, k)
+    kmers_sorted = sorted(index.keys())
+
+    with open(out_path, "w") as fout:
+        for kmer in kmers_sorted:
+            positions = index[kmer]
+            count = len(positions)
+
+            fout.write(f">{kmer}|count={count}\n")
+
+            pos_str = " ".join(str(p) for p in positions)
+            for i in range(0, len(pos_str), line_width):
+                fout.write(pos_str[i:i+line_width] + "\n")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def main():
+
+    conf_path = '/Users/xiaoyixu/Downloads/COMP561---Probabilistic-BLAST-main/chr22_ancestor.conf'
+
+    fasta_path = "/Users/xiaoyixu/Downloads/COMP561---Probabilistic-BLAST-main/chr22_ancestor.fa"
     p_max = read_confidences(conf_path)
+    sequence = read_fasta_sequence(fasta_path)
     score = build_score_matrix(sequence, p_max)
 
-    query = "CTTTCTGACTCCTTACGCTGTCCACTCATTCAGTTGATAAAAAGATAGAAACCCAGAATCTGAAGTCTCCTTTTGTCCCCAACATGCCTGATCACGAGGGCAGAACAGGACAACAGAAATGGCTCACACTTGACAGGCCATCTCTCCATGCCTATATTCATAAAGTATGCAGCCAGTTTTTCTTGTGACACACTTGATGTCCCTTGTAACAATGGGAAAATGTGAAGGACCGTGAGAAATCTGGCAGGCTGGCAAATATTTCCACAATTCAGTTCTTTTTTGATCTGTGAGGCTAATCTAATGATGGTGATAGGGCAAGGGAGTTAATGGCCCCTGAAAGGCCTACAGAAAACCCTCAGCCACGGGGTTAACAGACTGCCACAGGAGACTAAAGGAGAGACTGAGGCCCAGTGGGGAAACCAGCCAATGGGGAAGCAACAGGATCACTGGGGAGGACAGATCTGGGAAGGGAGAACACTCCAGAGCAGAGCTCCCTGAAAAGATCATTAATTCACACAATAGCTATTGAGCACCTACTATGTGCCTGACATTGTTCTAGGCACTGGGGGAAAGCATGGTGAGCAGGACGGGTAATTACGGTAGTCAGAGAATAATTATCTCAGAGTTGTAAGAGACTAAAAGGTCACTATTCGACCCCCTATTATTCACTCATATAACAAACATGTATTGAGAACTTACTATGTGCCGGGCCTTATGCTAGGCACTGGGGGTACGATGTGGACAAAACAGATGAGATTCTTGCCCTCATGGAGCTTACAGTCTAGCGGGGAAGGCAGACAAAAAAATCCCATAAACCAATGTATAATTACGAGCTGCGATAAGGGTCTTGCTGGAAAAGTACAGAATGCCATCAGTACATATGACAGGGGACCTTCCCAGTCTGAGGGGTCAGGGCCAAGACTTGCCTGAGAAAGTGACACTGAGCTCAAATCTGAAGGATGGAGAGGCATAACCAGGTGAAGGATCAGGGAGGTGTACTGATGTCAGAGTACAGGTTTAAATGTCCAAGGTGTGTTCAAGGAATGAGAAGAGGGCGGGGGTGGGGAAGGGCACA"
-    # first three bases manually changed from ATT → CTT
+    query, start = generate_query(sequence, p_max, length = 6, mut_rate=0.005)
+    out_path_q = "/Users/xiaoyixu/Downloads/COMP561---Probabilistic-BLAST-main/queries.fa"
+    out_path_w = "/Users/xiaoyixu/Downloads/COMP561---Probabilistic-BLAST-main/wordsdb.fa"
 
-    k = 11
-    index = build_kmer_index(sequence, k)
-    seed_threshold = 5.0
+    # write_queries_fasta(
+    #     out_path=out_path_q,
+    #     major_base=sequence,
+    #     p_max=p_max,
+    #     num_queries=10,
+    #     length=200,
+    #     mut_rate=0.005,
+    # )
+    write_kmer_index_fasta(sequence, 11, out_path_w)
 
-    seeds = find_probabilistic_seeds(query, k, index, score, seed_threshold)
-    print("found seeds counts:", len(seeds))
-    for db_pos, q_pos, sc in seeds[:10]:
-        print(f"DB:{db_pos}, Q:{q_pos}, score={sc:.3f}")
 
-    drop_off = 15.0
-    best_hsp = None
-    best_score = -1e18
 
-    for db_pos, q_pos, seed_sc in seeds:
-        hsp = ungapped_extension(score, query, db_pos, q_pos, k, drop_off)
-        if hsp["score"] > best_score:
-            best_score = hsp["score"]
-            best_hsp = hsp
 
-    if best_hsp is not None:
-        print("Best HSP:")
-        print("  score   :", best_hsp["score"])
-        print("  DB range:", best_hsp["db_start"], "->", best_hsp["db_end"])
-        print("  Q range :", best_hsp["q_start"], "->", best_hsp["q_end"])
-    else:
-        print("No HSP found (no seeds passed the threshold).")
+
+    # query = "CTTTCTGACTCCTTACGCTGTCCACTCATTCAGTTGATAAAAAGATAGAAACCCAGAATCTGAAGTCTCCTTTTGTCCCCAACATGCCTGATCACGAGGGCAGAACAGGACAACAGAAATGGCTCACACTTGACAGGCCATCTCTCCATGCCTATATTCATAAAGTATGCAGCCAGTTTTTCTTGTGACACACTTGATGTCCCTTGTAACAATGGGAAAATGTGAAGGACCGTGAGAAATCTGGCAGGCTGGCAAATATTTCCACAATTCAGTTCTTTTTTGATCTGTGAGGCTAATCTAATGATGGTGATAGGGCAAGGGAGTTAATGGCCCCTGAAAGGCCTACAGAAAACCCTCAGCCACGGGGTTAACAGACTGCCACAGGAGACTAAAGGAGAGACTGAGGCCCAGTGGGGAAACCAGCCAATGGGGAAGCAACAGGATCACTGGGGAGGACAGATCTGGGAAGGGAGAACACTCCAGAGCAGAGCTCCCTGAAAAGATCATTAATTCACACAATAGCTATTGAGCACCTACTATGTGCCTGACATTGTTCTAGGCACTGGGGGAAAGCATGGTGAGCAGGACGGGTAATTACGGTAGTCAGAGAATAATTATCTCAGAGTTGTAAGAGACTAAAAGGTCACTATTCGACCCCCTATTATTCACTCATATAACAAACATGTATTGAGAACTTACTATGTGCCGGGCCTTATGCTAGGCACTGGGGGTACGATGTGGACAAAACAGATGAGATTCTTGCCCTCATGGAGCTTACAGTCTAGCGGGGAAGGCAGACAAAAAAATCCCATAAACCAATGTATAATTACGAGCTGCGATAAGGGTCTTGCTGGAAAAGTACAGAATGCCATCAGTACATATGACAGGGGACCTTCCCAGTCTGAGGGGTCAGGGCCAAGACTTGCCTGAGAAAGTGACACTGAGCTCAAATCTGAAGGATGGAGAGGCATAACCAGGTGAAGGATCAGGGAGGTGTACTGATGTCAGAGTACAGGTTTAAATGTCCAAGGTGTGTTCAAGGAATGAGAAGAGGGCGGGGGTGGGGAAGGGCACA"
+    # # first three bases manually changed from ATT → CTT
+
+    # k = 11
+    # index = build_kmer_index(sequence, k)
+    # seed_threshold = 5.0
+
+    # seeds = find_probabilistic_seeds(query, k, index, score, seed_threshold)
+    # print("found seeds counts:", len(seeds))
+    # for db_pos, q_pos, sc in seeds[:10]:
+    #     print(f"DB:{db_pos}, Q:{q_pos}, score={sc:.3f}")
+
+    # drop_off = 15.0
+    # best_hsp = None
+    # best_score = -1e18
+
+    # for db_pos, q_pos, seed_sc in seeds:
+    #     hsp = ungapped_extension(score, query, db_pos, q_pos, k, drop_off)
+    #     if hsp["score"] > best_score:
+    #         best_score = hsp["score"]
+    #         best_hsp = hsp
+
+    # if best_hsp is not None:
+    #     print("Best HSP:")
+    #     print("  score   :", best_hsp["score"])
+    #     print("  DB range:", best_hsp["db_start"], "->", best_hsp["db_end"])
+    #     print("  Q range :", best_hsp["q_start"], "->", best_hsp["q_end"])
+    # else:
+    #     print("No HSP found (no seeds passed the threshold).")
 
 
 if __name__ == "__main__":
