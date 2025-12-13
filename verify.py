@@ -41,4 +41,4 @@ def load_conf(path):
 seq = load_fasta("chr22_ancestor.fa")
 conf = load_conf("chr22_ancestor.conf")
 
-print(seq[530631:(530632+10)])
+print(seq[425030:(425030+11)])

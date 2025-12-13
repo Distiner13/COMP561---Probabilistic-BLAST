@@ -143,7 +143,7 @@ def should_use_variant_fallback(exact_seeds, max_prob):
 
 # -------------------- Ungapped extension --------------------
 
-def ungapped_extend(query, genome, score_db, q0, g0):
+def ungapped_extend(query, genome, score_db, q0, g0, seed_word=None, seed_prob=None):
     k = WORD_LEN
 
     seed_score = sum(
@@ -195,6 +195,8 @@ def ungapped_extend(query, genome, score_db, q0, g0):
         "seed_q": q0,
         "seed_g": g0,
         "seed_score": seed_score,
+        "seed_word_db": seed_word,
+        "seed_prob_db": seed_prob
     }
 
 
@@ -441,16 +443,21 @@ def main():
         print("Seeds kept for extension:", len(top_seeds))
 
         results = []
-        for q_pos, g_pos, _, _ in top_seeds:
-            results.append(ungapped_extend(query, genome, score_db, q_pos, g_pos))
-
+        for q_pos, g_pos, prob, seed_word in top_seeds:
+            results.append(ungapped_extend(query, genome, score_db, q_pos, g_pos, seed_word=seed_word,
+            seed_prob=prob))
+        
         best = max(results, key=lambda x: x["score"])
         print("Best ungapped score:", round(best["score"], 4))
+        query_kmer = query[best["seed_q"] : best["seed_q"] + WORD_LEN]
+        db_seed = best["seed_word_db"]
         print("Best seed:",
             "query_pos =", best["seed_q"],
             "genome_pos =", best["seed_g"],
             "seed_score =", round(best["seed_score"], 4),
-            "seed_word =", query[best["seed_q"]:best["seed_q"] + WORD_LEN]
+            "db_prob =", None if best["seed_prob_db"] is None else round(best["seed_prob_db"], 6),
+            "db_seed =", db_seed,
+            "query_kmer =", query_kmer,
         )
 
 

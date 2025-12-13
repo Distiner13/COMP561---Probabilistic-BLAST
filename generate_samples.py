@@ -3,7 +3,7 @@ import random
 GENOME_FILE = "chr22_ancestor.fa"
 OUTPUT_FILE = "test_queries_generated.fa"
 
-QUERY_LENGTH = 50
+QUERY_LENGTH = 500
 N_MUTATIONS = 50
 N_QUERIES = 3
 RAND_ADDITIONAL = 30
