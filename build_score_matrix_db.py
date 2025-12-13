@@ -4,7 +4,17 @@ import pickle
 import time
 import os
 
-BASE_ORDER = ("A", "C", "G", "T")
+BASE_TO_INDEX = {"A": 0, "C": 1, "G": 2, "T": 3}
+
+def load_genome(path):
+    parts = []
+    with open(path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith(">"):
+                continue
+            parts.append(line)
+    return "".join(parts)
 
 def load_conf(path):
     with open(path, "r") as f:
@@ -25,7 +35,7 @@ def load_conf(path):
     return probs
 
 def estimate_resources(genome_length):
-    bytes_per_entry = 4 * 8  # four floats
+    bytes_per_entry = 4 * 8
     total_bytes = genome_length * bytes_per_entry
     total_mb = total_bytes / (1024 ** 2)
 
@@ -37,7 +47,7 @@ def estimate_resources(genome_length):
     print("Estimated build time: {:.2f} seconds".format(est_time_sec))
     print()
 
-def build_score_database(conf):
+def build_score_database(genome, conf):
     n = len(conf)
     score_db = [None] * n
 
@@ -48,13 +58,15 @@ def build_score_database(conf):
         score_dom = 1.0
         score_other = 1.0 - ((p_max - p_other) * 3.0)
 
-        # Scores are stored in fixed (A, C, G, T) order
-        score_db[i] = (
-            score_dom,
-            score_other,
-            score_other,
-            score_other,
-        )
+        base = genome[i]
+        scores = [score_other, score_other, score_other, score_other]
+
+        if base in BASE_TO_INDEX:
+            scores[BASE_TO_INDEX[base]] = score_dom
+        else:
+            pass
+
+        score_db[i] = (scores[0], scores[1], scores[2], scores[3])
 
     return score_db
 
@@ -66,12 +78,20 @@ def main():
         print("Delete it manually if you want to rebuild.")
         return
 
+    genome = load_genome("chr22_ancestor.fa")
     conf = load_conf("chr22_ancestor.conf")
 
-    estimate_resources(len(conf))
+    if len(genome) != len(conf):
+        raise ValueError(
+            "Length mismatch: genome has {} bases but conf has {} probabilities".format(
+                len(genome), len(conf)
+            )
+        )
+
+    estimate_resources(len(genome))
 
     start = time.time()
-    score_db = build_score_database(conf)
+    score_db = build_score_database(genome, conf)
     elapsed = time.time() - start
 
     with open(output_file, "wb") as f:
