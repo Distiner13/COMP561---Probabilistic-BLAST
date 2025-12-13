@@ -86,20 +86,25 @@ def build_database(seq, conf):
         db[word].append((i, base_prob))
 
         # One "_" variant per position is stored
+        max_prob = 0
+        max_prob_variant = None
         for j in range(WORD_LEN):
             p = probs[j]
             alt_p = (1.0 - p) / 3 
             var_prob = (base_prob/p) * alt_p 
             var_word = word[:j] + "_" + word[j + 1:]
-
+            if var_prob > max_prob:
+                max_prob = var_prob
+                max_prob_variant = var_word
             if var_word not in db:
                 db[var_word] = []
             db[var_word].append((i, var_prob))
 
-    return db
+    return db, max_prob_variant
 
 def main():
     output_file = "probabilistic_db.pkl"
+    output_file2 = "max_prob_variant.txt"
 
     if os.path.exists(output_file):
         print("Database already exists:", output_file)
@@ -120,12 +125,14 @@ def main():
     estimate_resources(len(seq))
 
     start = time.time()
-    db = build_database(seq, conf)
+    db, max_prob_variant = build_database(seq, conf)
     elapsed = time.time() - start
 
     # Database is written as a real file in the current directory
     with open(output_file, "wb") as f:
         pickle.dump(db, f, protocol=pickle.HIGHEST_PROTOCOL)
+    with open(output_file2, "w") as f:
+        f.write(max_prob_variant)
 
     print("Database written to:", output_file)
     print("Actual build time: {:.1f} seconds".format(elapsed))

@@ -79,14 +79,66 @@ def split_into_words(seq):
     return [(i, seq[i:i + WORD_LEN]) for i in range(len(seq) - WORD_LEN + 1)]
 
 
-def find_seeds(query, seed_db):
+def find_seeds_exact(query, seed_db):
     seeds = []
     for q_pos, word in split_into_words(query):
         hits = seed_db.get(word)
         if hits:
-            for g_pos, _ in hits:
-                seeds.append((q_pos, g_pos))
+            for g_pos, prob in hits:
+                seeds.append((q_pos, g_pos, prob, word))
     return seeds
+
+
+def iter_variant_words_for_query_index(query, i):
+    n = len(query)
+    last_start = n - WORD_LEN
+    if last_start < 0:
+        return
+
+    s0 = max(0, i - (WORD_LEN - 1))
+    s1 = min(i, last_start)
+
+    for s in range(s0, s1 + 1):
+        off = i - s
+        w = query[s:s + WORD_LEN]
+        v = w[:off] + "_" + w[off + 1:]
+        yield s, v
+
+
+def find_seeds_variants(query, seed_db):
+    seeds = []
+    seen = set()
+
+    for i in range(len(query)):
+        for q_pos, vword in iter_variant_words_for_query_index(query, i):
+            key = (q_pos, vword)
+            if key in seen:
+                continue
+            seen.add(key)
+
+            hits = seed_db.get(vword)
+            if hits:
+                for g_pos, prob in hits:
+                    seeds.append((q_pos, g_pos, prob, vword))
+
+    return seeds
+
+
+def top_seeds_by_prob(seeds, k):
+    seeds.sort(key=lambda x: x[2], reverse=True)
+    return seeds[:k]
+
+
+def should_use_variant_fallback(exact_seeds, max_prob):
+    if not exact_seeds:
+        return True
+
+    top = top_seeds_by_prob(exact_seeds[:], MAX_SEEDS_TO_EXTEND)
+    for _, _, p, _ in top:
+        if p < max_prob:
+            return True
+
+    return False
 
 
 # -------------------- Ungapped extension --------------------
@@ -331,31 +383,80 @@ def print_alignment_visual(aln, conf, score_db, block=20):
 
 # -------------------- Main --------------------
 
+def compute_max_prob_from_word(seed_db, word):
+    hits = seed_db.get(word)
+    if not hits:
+        return 0.0
+    return max(p for _, p in hits)
+
+
 def main():
     seed_db = load_pickle("probabilistic_db.pkl")
     score_db = load_pickle("score_matrix_db.pkl")
+
+    max_prob_variant_word = None
+    max_prob = 0.0
+
+    try:
+        with open("max_prob_variant.txt", "r") as f:
+            max_prob_variant_word = f.read().strip()
+        print("Max probability reference word:", max_prob_variant_word)
+        max_prob = compute_max_prob_from_word(seed_db, max_prob_variant_word)
+        print("Max probability threshold:", max_prob)
+    except FileNotFoundError:
+        print("max_prob_variant.txt not found")
+        print("Max probability threshold set to 0.0")
+
     genome = load_genome("chr22_ancestor.fa")
     conf = load_conf("chr22_ancestor.conf")
     queries = load_queries("test_queries_generated.fa")
 
     for qid, query in queries:
         print("\nProcessing:", qid)
+        print("Query length:", len(query))
 
-        seeds = find_seeds(query, seed_db)
-        if not seeds:
+        exact_seeds = find_seeds_exact(query, seed_db)
+        print("Exact seeds found:", len(exact_seeds))
+        print("Exact seeds (top 5):", top_seeds_by_prob(exact_seeds[:], 5))
+        
+        
+        use_variants = should_use_variant_fallback(exact_seeds, max_prob)
+
+        all_seeds = exact_seeds[:]
+
+        if use_variants:
+            print("Variant fallback was triggered")
+            variant_seeds = find_seeds_variants(query, seed_db)
+            print("Variant seeds found:", len(variant_seeds))
+            print("Variant seeds (top 5):", top_seeds_by_prob(variant_seeds[:], 5))
+            all_seeds.extend(variant_seeds)
+        else:
+            print("Variant fallback was not triggered")
+
+        if not all_seeds:
             print("No seeds found")
             continue
 
-        results = [ungapped_extend(query, genome, score_db, q, g)
-                   for q, g in seeds[:MAX_SEEDS_TO_EXTEND]]
-        best = max(results, key=lambda x: x["score"])
+        top_seeds = top_seeds_by_prob(all_seeds, MAX_SEEDS_TO_EXTEND)
+        print("Seeds kept for extension:", len(top_seeds))
 
+        results = []
+        for q_pos, g_pos, _, _ in top_seeds:
+            results.append(ungapped_extend(query, genome, score_db, q_pos, g_pos))
+
+        best = max(results, key=lambda x: x["score"])
         print("Best ungapped score:", round(best["score"], 4))
+        print("Best seed:",
+            "query_pos =", best["seed_q"],
+            "genome_pos =", best["seed_g"],
+            "seed_score =", round(best["seed_score"], 4),
+            "seed_word =", query[best["seed_q"]:best["seed_q"] + WORD_LEN]
+        )
+
 
         seed, left, right = ungapped_extend_with_trace_coords(
             query, genome, score_db, best["seed_q"], best["seed_g"]
         )
-
         plot_alignment_score_trace(seed, left, right)
 
         core, full = gapped_extend_flanks(query, genome, score_db, best)

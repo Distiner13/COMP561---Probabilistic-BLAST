@@ -4,8 +4,8 @@ GENOME_FILE = "chr22_ancestor.fa"
 OUTPUT_FILE = "test_queries_generated.fa"
 
 QUERY_LENGTH = 50
-N_MUTATIONS = 2
-N_QUERIES = 10
+N_MUTATIONS = 50
+N_QUERIES = 3
 RAND_ADDITIONAL = 30
 
 BASES = ["A", "C", "G", "T"]
